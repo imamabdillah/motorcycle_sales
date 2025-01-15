@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -20,6 +21,7 @@ export default function PurchaseForm() {
   const [selectedMotorcycle, setSelectedMotorcycle] = useState("");
   const [selectedInstallment, setSelectedInstallment] = useState("");
   const { toast } = useToast();
+  const router = useRouter();
 
   useEffect(() => {
     const fetchMotorcycles = async () => {
@@ -53,17 +55,15 @@ export default function PurchaseForm() {
       return;
     }
 
-    // Format purchaseDate to match backend's expected format (YYYY-MM-DD HH:mm:ss)
-    const formattedPurchaseDate = purchaseDate
-      ? new Date(purchaseDate).toISOString().slice(0, 19).replace("T", " ")
-      : "";
-
-    // Convert selectedInstallment to number
+    const formattedPurchaseDate = new Date(purchaseDate)
+      .toISOString()
+      .slice(0, 19)
+      .replace("T", " ");
     const installmentPeriod = Number(selectedInstallment);
 
     const purchaseData = {
       buyerName,
-      purchaseDate: formattedPurchaseDate, // Send in the format 'YYYY-MM-DD HH:mm:ss'
+      purchaseDate: formattedPurchaseDate,
       motorcycleType: selectedMotorcycle,
       installmentPeriod,
     };
@@ -71,22 +71,19 @@ export default function PurchaseForm() {
     try {
       const response = await fetch("http://localhost:3000/api/purchase", {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify(purchaseData),
       });
 
       if (response.ok) {
+        const data = await response.json();
         toast({
           title: "Purchase Successful",
-          description: "Your motorcycle purchase has been recorded.",
+          description: "Redirecting to report...",
         });
-        // Reset form fields after successful submission
-        setBuyerName("");
-        setPurchaseDate("");
-        setSelectedMotorcycle("");
-        setSelectedInstallment("");
+
+        // Redirect to report page
+        router.push(`/report/${data.purchaseId}`);
       } else {
         const errorData = await response.json();
         throw new Error(errorData.message || "Failed to save purchase");

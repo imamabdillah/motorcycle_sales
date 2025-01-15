@@ -41,7 +41,11 @@ app.post("/api/purchase", (req, res) => {
     "SELECT * FROM motorcycles WHERE name = ?",
     [motorcycleType],
     (err, motorcycleResults) => {
-      if (err || motorcycleResults.length === 0) {
+      if (err) {
+        console.error("Error fetching motorcycle:", err);
+        return res.status(500).send("Error fetching motorcycle");
+      }
+      if (motorcycleResults.length === 0) {
         return res.status(404).send("Motorcycle not found");
       }
 
@@ -58,32 +62,28 @@ app.post("/api/purchase", (req, res) => {
         installmentAmount = (basePrice * 1.8) / installmentPeriod; // 80% tambahan
       }
 
-      // Ambil tanggal dari purchaseDate dan format menjadi YYYY-MM-DD
       const purchaseDateObj = new Date(purchaseDate);
-      const purchaseDateOnly = purchaseDateObj
-        .toISOString()
-        .slice(0, 19)
-        .replace("T", " "); // Format YYYY-MM-DD HH:MM:SS
+      const purchaseDateOnly = purchaseDateObj.toISOString().slice(0, 10); // Format YYYY-MM-DD
 
-      // Query untuk memeriksa apakah promo berlaku berdasarkan start_date dan end_date
+      // Query untuk memeriksa apakah promo berlaku
       db.query(
         "SELECT * FROM promo_ranges WHERE start_date <= ? AND end_date >= ?",
         [purchaseDateOnly, purchaseDateOnly],
         (err, promoResults) => {
-          if (err) throw err;
+          if (err) {
+            console.error("Error checking promo:", err);
+            return res.status(500).send("Error checking promo");
+          }
 
           let promoDiscount = 0;
           let promoApplied = 0;
           if (promoResults.length > 0) {
-            // Promo diterapkan jika ada hasil yang cocok
             promoApplied = 1;
             promoDiscount = installmentAmount * 0.5; // Diskon 50% untuk 2 bulan terakhir
           }
 
-          // Hitung total harga setelah diskon promo
           const totalInstallmentAmount =
-            installmentAmount * installmentPeriod - promoDiscount * 2; // 2 bulan terakhir dapat diskon
-
+            installmentAmount * installmentPeriod - promoDiscount * 2; // Diskon 2 bulan terakhir
           const totalAmount = basePrice + totalInstallmentAmount;
 
           // Simpan data pembelian
@@ -93,11 +93,11 @@ app.post("/api/purchase", (req, res) => {
             query,
             [
               buyerName,
-              purchaseDateOnly, // Menggunakan tanggal yang sudah diformat
+              purchaseDateOnly,
               motorcycle.id,
               installmentPeriod,
               totalAmount,
-              promoApplied, // Promo diterapkan jika promo ada
+              promoApplied,
             ],
             (err, result) => {
               if (err) {
@@ -114,23 +114,26 @@ app.post("/api/purchase", (req, res) => {
 
                 let amount = installmentAmount;
 
-                // Jika bulan ke-i adalah 2 bulan terakhir dan promo diterapkan
+                // Diskon untuk 2 bulan terakhir jika promo diterapkan
                 if (promoApplied && i > installmentPeriod - 2) {
-                  amount = installmentAmount * 0.5; // Diskon 50% untuk 2 bulan terakhir
+                  amount = installmentAmount * 0.5;
                 }
 
                 db.query(
                   "INSERT INTO installments (purchase_id, installment_no, amount, due_date) VALUES (?, ?, ?, ?)",
-                  [purchaseId, i, amount, dueDate],
+                  [purchaseId, i, amount, dueDate.toISOString().slice(0, 10)],
                   (err) => {
                     if (err) {
-                      console.log("Error saving installments:", err);
+                      console.error("Error saving installment:", err);
                     }
                   }
                 );
               }
 
-              res.status(200).json({ message: "Purchase saved successfully!" });
+              res.status(200).json({
+                message: "Purchase saved successfully!",
+                purchaseId: purchaseId,
+              });
             }
           );
         }
@@ -139,30 +142,46 @@ app.post("/api/purchase", (req, res) => {
   );
 });
 
-// API untuk mengambil laporan pembelian
-app.get("/api/reports", (req, res) => {
-  const sql = `
-    SELECT 
-        p.buyer_name AS buyer_name,
-        DATE(p.purchase_date) AS purchase_date,
-        m.name AS motorcycle_name,
-        GROUP_CONCAT(CONCAT('Angsuran ke-', i.installment_no, ': ', FORMAT(i.amount, 0)) ORDER BY i.installment_no ASC SEPARATOR ', ') AS installments
-    FROM 
-        purchases p
-    JOIN 
-        motorcycles m ON p.motorcycle_id = m.id
-    JOIN 
-        installments i ON p.id = i.purchase_id
-    GROUP BY 
-        p.id;
-  `;
+// API untuk mengambil detail pembelian beserta angsuran
+app.get("/api/purchase/:id", (req, res) => {
+  const purchaseId = req.params.id;
 
-  db.query(sql, (err, results) => {
+  // Query untuk mengambil detail pembelian
+  const purchaseQuery = `
+    SELECT purchases.buyer_name, purchases.purchase_date, motorcycles.name AS motorcycle_name 
+    FROM purchases 
+    JOIN motorcycles ON purchases.motorcycle_id = motorcycles.id 
+    WHERE purchases.id = ?`;
+
+  db.query(purchaseQuery, [purchaseId], (err, purchaseResults) => {
     if (err) {
-      console.error("Error fetching report:", err);
-      return res.status(500).send("Internal Server Error");
+      console.error("Error fetching purchase details:", err);
+      return res.status(500).send("Error fetching purchase details");
     }
-    res.json(results);
+
+    if (purchaseResults.length === 0) {
+      return res.status(404).send("Purchase not found");
+    }
+
+    const purchaseDetails = purchaseResults[0];
+
+    // Query untuk mengambil data angsuran
+    const installmentQuery = `
+      SELECT installment_no, amount, due_date 
+      FROM installments 
+      WHERE purchase_id = ?`;
+
+    db.query(installmentQuery, [purchaseId], (err, installmentResults) => {
+      if (err) {
+        console.error("Error fetching installments:", err);
+        return res.status(500).send("Error fetching installments");
+      }
+
+      res.json({
+        purchaseDetails,
+        installments: installmentResults,
+      });
+    });
   });
 });
 
