@@ -53,7 +53,7 @@ export default function PurchaseForm() {
       return;
     }
 
-    // Format purchaseDate to match backend's expected format
+    // Format purchaseDate to match backend's expected format (YYYY-MM-DD HH:mm:ss)
     const formattedPurchaseDate = purchaseDate
       ? new Date(purchaseDate).toISOString().slice(0, 19).replace("T", " ")
       : "";
@@ -63,7 +63,7 @@ export default function PurchaseForm() {
 
     const purchaseData = {
       buyerName,
-      purchaseDate: formattedPurchaseDate,
+      purchaseDate: formattedPurchaseDate, // Send in the format 'YYYY-MM-DD HH:mm:ss'
       motorcycleType: selectedMotorcycle,
       installmentPeriod,
     };
