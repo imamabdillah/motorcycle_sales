@@ -30,7 +30,6 @@ export default function ReportPage({ purchaseId }: { purchaseId: number }) {
   const [reportData, setReportData] = useState<ReportData | null>(null);
   const { toast } = useToast();
   const router = useRouter();
-
   useEffect(() => {
     const fetchReportData = async () => {
       try {
